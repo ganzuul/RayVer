@@ -26,18 +26,6 @@ export HSA_FORCE_FINE_GRAIN_PCIE=1
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
 export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
-export NUMEXPR_MAX_THREADS=128
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-
-# --- Path and App Params ---
-SLURM_JOB_ACCOUNT=${SLURM_JOB_ACCOUNT:-"project_465002004"} 
-PROJECT="/project/${SLURM_JOB_ACCOUNT}"
-SCRATCH="/scratch/${SLURM_JOB_ACCOUNT}"
-FLASH="/flash/${SLURM_JOB_ACCOUNT}"
-
-export OUTPUT_DIR="$SCRATCH/$USER/logs_also/ray_diag_outputs_job$SLURM_JOB_ID"
-export LOGGING_DIR="$SCRATCH/$USER/logs"
-mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR"
 
 # --- Ray Cluster Setup (2 nodes) ---
 nodes_str=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
@@ -99,7 +87,7 @@ srun --nodes=1 --ntasks=1 --exclude=$head_node_hostname --jobid $SLURM_JOBID --c
     bash -c "${RAY_NODE_SETUP_CMDS} \
             $RAY start --block --address=$head_node_hostname:${RAY_PORT}  --num-cpus=${RAY_NODE_CPUS} --num-gpus=${RAY_NODE_GPUS}" &
 echo "DEBUG: Ray worker srun command issued. Waiting for it to connect..."
-sleep 30
+sleep 60
 
 # --- Log Collection ---
 # Not happening because of head and worker ntasks still taking up the available slots

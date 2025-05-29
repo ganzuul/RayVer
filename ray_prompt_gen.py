@@ -1,6 +1,3 @@
-# WIP, but 16x GCDs seem to give 125T/s
-# groq produces 250T/s with the same model so this is great
-
 import os
 import json
 from datetime import datetime
@@ -14,6 +11,7 @@ from rich.console import Console
 
 import ray
 from ray.data.llm import vLLMEngineProcessorConfig, build_llm_processor
+#from ray.experimental.tqdm_ray import tqdm
 
 # --- Pydantic Model Definition ---
 class StructuredOutput(BaseModel):
@@ -22,7 +20,6 @@ class StructuredOutput(BaseModel):
     """
     input_prompt: str
     generated_data: str 
-    generation_details: Optional[str] = None
 
 # Generate the JSON schema for the StructuredOutput model
 structured_output_schema = StructuredOutput.model_json_schema()
@@ -40,7 +37,7 @@ TENSOR_PARALLEL_SIZE = int(os.getenv("TENSOR_PARALLEL_SIZE_ENV", "1"))
 PIPELINE_PARALLEL_SIZE = int(os.getenv("PIPELINE_PARALLEL_SIZE_ENV", "1")) # Used for concurrency
 GPU_MEMORY_UTILIZATION = float(os.getenv("GPU_MEMORY_UTILIZATION_ENV", "0.90"))
 MODEL_DTYPE = os.getenv("MODEL_DTYPE_ENV", "bfloat16")
-# SHARED_MODEL_CACHE is not directly used by vLLMEngineProcessorConfig, vLLM uses HF cache.
+VLLM_DISTRIBUTED_EXECUTOR_BACKEND = os.getenv("VLLM_DISTRIBUTED_EXECUTOR_BACKEND", "mp")
 
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5")) # Allow 0.0 for greedy
@@ -104,7 +101,7 @@ def preprocess_prompts(row: Dict[str, Any]) -> Dict[str, Any]:
         "messages": [
             {
                 "role": "system",
-                "content": "You are an AI assistant. Generate a structured JSON output based on the user's prompt, conforming to the provided JSON schema."
+                "content": "You are an AI assistant specialized in generating high-quality synthetic data. Generate structured JSON output that conforms to the provided schema. Be creative, diverse, and ensure the output is meaningful and realistic."
             },
             {
                 "role": "user",
@@ -117,7 +114,7 @@ def preprocess_prompts(row: Dict[str, Any]) -> Dict[str, Any]:
             top_p=current_top_p,
             top_k=current_top_k,
             detokenize=False, # Recommended by Ray Data example for vLLM
-            guided_decoding=dict(json=structured_output_schema)
+           # guided_decoding=dict(json=structured_output_schema)
         ),
     }
 
@@ -128,7 +125,7 @@ def postprocess_responses(row: Dict[str, Any]) -> Dict[str, Any]:
     The input `row` will contain the original columns from `preprocess_prompts`'s input
     plus a "generated_text" column from the LLM.
     """
-    return {"original_prompt": row["prompt"], "generated_json_string": row["generated_text"]}
+    return {"generated_json_string": row["generated_text"]}
 
 
 def main():
@@ -157,27 +154,26 @@ def main():
     else:
         logger.info(f"Max Model Length: Will be inferred by vLLM from model config.")
     logger.info(f"Prompts File: {PROMPTS_FILE}")
-    logger.info(f"Ray Data Batch Size: {RAY_DATA_BATCH_SIZE}")
+    # logger.info(f"Ray Data Batch Size: {RAY_DATA_BATCH_SIZE}")
     logger.info(f"Generation Params (used for vLLM SamplingParams) - Max New Tokens: {MAX_NEW_TOKENS}, Temp: {TEMPERATURE}, Top P: {TOP_P}, Top K: {TOP_K}")
     logger.info(f"Schema for guided decoding: {json.dumps(structured_output_schema, indent=2)}")
-
 
     # --- Configure vLLMEngineProcessorConfig ---
     # vllm/vllm/engine/arg_utils.py
     logger.info("Configuring vLLMEngineProcessorConfig...")
     engine_kwargs_config = {
-        "guided_decoding_backend": "xgrammar",
+        #"guided_decoding_backend": "xgrammar",
         "dtype": MODEL_DTYPE,
+        #"download_dir": SHARED_MODEL_CACHE,
         "tensor_parallel_size": TENSOR_PARALLEL_SIZE,
-        "pipeline_parallel_size": PIPELINE_PARALLEL_SIZE,
         "gpu_memory_utilization": GPU_MEMORY_UTILIZATION,
-        "distributed_executor_backend": "ray",
-        "enable_expert_parallel": True,
-        "use_tqdm_on_load": True,
-        "max-parallel-loading-workers": 2, # Load model sequentially in multiple batches to avoid RAM OOM when using tensor parallel and large models. 
-
-        # "enforce_eager": True, # Recommended for stability with Ray Data
-        # `download_dir` could be added if HF_HOME/HF_HUB_CACHE isn't picked up as expected
+        "distributed_executor_backend": VLLM_DISTRIBUTED_EXECUTOR_BACKEND,
+        "trust_remote_code": True,
+        "enforce_eager": True, # Recommended for stability with Ray Data
+        # "use_tqdm_on_load": True
+        # "max-parallel-loading-workers": 2, # unexpected
+        # "enable_expert_parallel": True,
+        # "disable_log_stats": False, # conflicting config gets appended from somewhere
     }
     if MAX_MODEL_LEN_PARAM:
         engine_kwargs_config["max_model_len"] = MAX_MODEL_LEN_PARAM
@@ -185,8 +181,8 @@ def main():
     processor_config = vLLMEngineProcessorConfig(
         model_source=MODEL_ID_OR_PATH,
         engine_kwargs=engine_kwargs_config,
-        batch_size=RAY_DATA_BATCH_SIZE,
-        concurrency=PIPELINE_PARALLEL_SIZE 
+        #batch_size=RAY_DATA_BATCH_SIZE,
+        #concurrency=PIPELINE_PARALLEL_SIZE 
     )
     logger.info("vLLMEngineProcessorConfig configured.")
 

@@ -4,31 +4,50 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=56
 #SBATCH --gpus-per-node=8
-#SBATCH --time=00:20:00
+#SBATCH --time=00:30:00
 #SBATCH --partition=dev-g
 #SBATCH --account=project_465002004
 #SBATCH --output=logs/ray_diag_%j.out
 #SBATCH --error=logs/ray_diag_%j.err
 
-set -x # For debugging
+set -e
 
 # --- LUMI Modules & AI Bindings ---
 #module purge # but then load libfabric etc etc...
-#module use /appl/local/csc/modulefiles/
-#module load pytorch/2.5 ## too old, we get 2.7 from custom container 
+module load LUMI/24.03 partition/G
 module use /appl/local/containers/ai-modules
 module load singularity-AI-bindings
 RAY="python3 -m ray.scripts.scripts"
 RAY_TASK="python3 ray_prompt_gen.py" #  <---  PYTHON SCRIPT HERE
 
+# --- Enhanced Debug and Logging ---
+export VLLM_CONFIGURE_LOGGING=1
+export VLLM_LOGGING_LEVEL=INFO
+export NCCL_DEBUG=INFO
+export RAY_LOGGING_LEVEL=WARNING
+# export RAY_LOG_TO_STDERR=1
+export RAY_DISABLE_IMPORT_WARNING=1
+export RAY_DATA_DISABLE_PROGRESS_BARS=1
+export RAY_DEDUP_LOGS=1
+
 # --- NCCL, HIP, Binding ---
+# export NCCL_IB_DISABLE=1 # should fallback to Ethernet
 export NCCL_SOCKET_IFNAME=hsn0,hsn1,hsn2,hsn3
 export NCCL_NET_GDR_LEVEL=PHB # or 3
-export HSA_FORCE_FINE_GRAIN_PCIE=1
-export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+# export NCCL_DMABUF_ENABLE=0 # Segfaults
+# export RCCL_MSCCL_FORCE_ENABLE=1
+# export RCCL_MSCCL_ENABLE_SINGLE_PROCESS=1
+# export RCCL_MSCCLPP_ENABLE=1
+# export NCCL_MIN_NCHANNELS=32
+# export HSA_FORCE_FINE_GRAIN_PCIE=1
 export RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
 export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
-export NUMEXPR_MAX_THREADS=128 
+#export NUMEXPR_MAX_THREADS=7
+
+# AMD tuning
+# export HIP_FORCE_DEV_KERNARG=1
+# export TORCH_BLAS_PREFER_HIPBLASLT=1
+# export PYTORCH_TUNABLEOP_ENABLED=1 
 
 # --- Path and App Params ---
 SLURM_JOB_ACCOUNT=${SLURM_JOB_ACCOUNT:-"project_465002004"} 
@@ -40,15 +59,20 @@ export LOGGING_DIR="$SCRATCH/$USER/logs"
 mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR"
 
 # HF and Torch Cache
-ACTUAL_HF_HOME_PATH="$SCRATCH/huggingface/" 
+ACTUAL_HF_HOME_PATH="$SCRATCH/huggingface" 
 export HF_HOME="$ACTUAL_HF_HOME_PATH"
-export HF_TOKEN=USER_HF_TOKEN # per hf model argreements also needed
-export HF_HUB_CACHE="$ACTUAL_HF_HOME_PATH/hub/"
+export HF_TOKEN=$USER_HF_TOKEN # per hf model argreements also needed
+# export HF_HUB_CACHE="$ACTUAL_HF_HOME_PATH/hub"
 export TORCH_HOME="$SCRATCH/torch-cache"
+export SHARED_MODEL_CACHE="$FLASH/hf-cache/hub" #for download_dir
+export HF_HUB_CACHE=$SHARED_MODEL_CACHE
+
 mkdir -p "$TORCH_HOME" "$ACTUAL_HF_HOME_PATH" "$HF_HUB_CACHE"
 
-export MODEL_ID_OR_PATH_ENV="deepseek-ai/DeepSeek-R1-Distill-Llama-70B" # 125Tok/s, no SPMD
-#export MODEL_ID_OR_PATH_ENV="deepseek-ai/DeepSeek-V3-0324" # Might OOM
+# export MODEL_ID_OR_PATH_ENV="deepseek-ai/DeepSeek-R1-Distill-Llama-70B" # 125Tok/s, no SPMD
+# export MODEL_ID_OR_PATH_ENV="deepseek-ai/DeepSeek-V3-0324" # Might OOM
+export MODEL_ID_OR_PATH_ENV="meta-llama/Llama-3.2-1B-Instruct"
+# export MODEL_ID_OR_PATH_ENV="EleutherAI/gpt-neo-1.3B"
 export PROMPTS_FILE_ENV="${PROJECT}/${USER}/prompts.json"
 export TENSOR_PARALLEL_SIZE_ENV=8
 export PIPELINE_PARALLEL_SIZE_ENV=${SLURM_NNODES}
@@ -58,28 +82,23 @@ export MAX_NEW_TOKENS=1024
 export MAX_MODEL_LEN_ENV=2048
 
 # --- Ray Data / Generation Specific ENVs ---
-export TEMPERATURE="0.5" # Default temperature, used by prompt_gen.py
-export TOP_P="1.0"       # Default top_p, used by prompt_gen.py
-export TOP_K="-1"        # Default top_k, used by prompt_gen.py
-export RAY_DATA_BATCH_SIZE="16" # Default batch size for Ray Data processing
+export TEMPERATURE="0.7"
+export TOP_P=".9"
+export TOP_K="-1"
+export RAY_DATA_BATCH_SIZE="8"
 
 # --- vLLM Specific ENVs ---
-export VLLM_USE_RAY_SPMD_WORKER=1                       # Brittle, maybe not needed
-export VLLM_USE_RAY_COMPILED_DAG=1                      # Brittle, maybe not needed
-export VLLM_USE_RAY_COMPILED_DAG_NCCL_CHANNEL=1         # Brittle, maybe not needed
-export VLLM_USE_RAY_COMPILED_DAG_OVERLAP_COMM=1         # Brittle, maybe not needed
-export VLLM_USE_RAY_COMPILED_DAG_CHANNEL_TYPE="nccl"    # Brittle, maybe not needed
-export VLLM_USE_TRITON_FLASH_ATTN=1
-export VLLM_ROCM_USE_AITER=1
-export VLLM_ROCM_USE_AITER_PAGED_ATTN=1
-export VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON=1
-export VLLM_ATTENTION_BACKEND="ROCM_FLASH"
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
+# export VLLM_USE_RAY_SPMD_WORKER=0
+export VLLM_DISTRIBUTED_EXECUTOR_BACKEND="ray"
+export VLLM_ATTENTION_BACKEND="ROCM_FLASH"
+
 
 # --- Singularity Setup ---
 CONTAINER_ROOT=$FLASH
-# docker://rocm/vllm-dev:nightly plus custom overlay
-CONTAINER_PATH="--overlay ${CONTAINER_ROOT}/vllm_mpich_overlay.sif ${CONTAINER_ROOT}/vllm_mpich.sif" 
+# from docker://rocm/vllm-dev:nightly plus custom overlay
+# CONTAINER_PATH="--overlay ${CONTAINER_ROOT}/vllm_mpich_overlay.sif ${CONTAINER_ROOT}/vllm_mpich.sif" 
+CONTAINER_PATH="/appl/local/containers/tested-containers/lumi-pytorch-rocm-6.2.4-python-3.12-pytorch-v2.7.0-dockerhash-2a550b31226f.sif"
 SINGULARITY_EXEC_BASE="singularity exec --rocm ${CONTAINER_PATH}"
 
 # --- Ray Cluster Setup (2 nodes) ---
@@ -113,18 +132,27 @@ if [ -z "$head_node_ip" ]; then # Fallback to the first IP if no IPv4 was clearl
     echo "WARNING: Could not definitively identify an IPv4 address; using first reported IP: $head_node_ip"
 fi
 
-export RAY_CLIENT_ADDRESS="${head_node_ip}:${RAY_PORT}"
+export RAY_ADDRESS="${head_node_ip}:${RAY_PORT}"
 
 RAY_NODE_CPUS=$SLURM_CPUS_PER_TASK
 RAY_NODE_GPUS=$SLURM_GPUS_PER_NODE
 RAY_NODE_SETUP_CMDS="export RAY_DISABLE_MEMORY_MONITOR=1; \
-ulimit -n 65536; "
+export RAY_TMPDIR=/tmp/ray; \
+export MIOPEN_USER_DB_PATH=/tmp/$(whoami)-miopen-cache-$SLURM_JOBID-\$SLURM_NODEID; mkdir -p \$MIOPEN_USER_DB_PATH; export MIOPEN_CUSTOM_CACHE_DIR=\$MIOPEN_USER_DB_PATH; \
+export LD_LIBRARY_PATH=/usr/lib64/mpi/gcc/mpich/lib64:\$LD_LIBRARY_PATH &&
+ldd /opt/aws-ofi-rccl/librccl-net.so | grep fabric &&
+ls /opt/cray/libfabric/1.15.2.0/lib64/libfabric.so.1 &&
+ulimit -n 65536; \
+ulimit -u 32768; \
+echo 'Node setup complete, Ray version:'; \
+python3 -c 'import ray; print(ray.__version__)';"
+#"echo 'GPU visibility:'; python3 -c 'import torch; print(f\"CUDA available: {torch.cuda.is_available()}\"); print(f\"Device count: {torch.cuda.device_count()}\")' || echo 'PyTorch GPU check failed';"
 
-# --- Propagate ALL necessary env vars into Singularity for the Python script ---
-export SINGULARITYENV_HF_HOME_ENV="$ACTUAL_HF_HOME_PATH"
-export SINGULARITYENV_SHARED_MODEL_CACHE_ENV="$ACTUAL_HF_HOME_PATH"
-export SINGULARITYENV_OUTPUT_DIR_ENV="$OUTPUT_DIR" # Python script will use this
-export SINGULARITYENV_LOGGING_DIR_ENV="$LOGGING_DIR" # Python script will use this
+# --- Explicitly propagate env vars into Singularity for the Python script ---
+export SINGULARITYENV_HF_HOME_ENV=$ACTUAL_HF_HOME_PATH
+export SINGULARITYENV_SHARED_MODEL_CACHE_ENV=$SHARED_MODEL_CACHE
+export SINGULARITYENV_OUTPUT_DIR_ENV=$OUTPUT_DIR # Python script will use this
+export SINGULARITYENV_LOGGING_DIR_ENV=$LOGGING_DIR # Python script will use this
 export SINGULARITYENV_MAX_NEW_TOKENS=$MAX_NEW_TOKENS
 export SINGULARITYENV_HF_TOKEN=$HF_TOKEN
 export SINGULARITYENV_MODEL_ID_OR_PATH_ENV=$MODEL_ID_OR_PATH_ENV
@@ -135,38 +163,47 @@ export SINGULARITYENV_GPU_MEMORY_UTILIZATION_ENV=$GPU_MEMORY_UTILIZATION_ENV
 export SINGULARITYENV_MODEL_DTYPE_ENV=$MODEL_DTYPE_ENV
 export SINGULARITYENV_MAX_MODEL_LEN_ENV=$MAX_MODEL_LEN_ENV
 
+# AMD tuning
+# export SINGULARITYENV_HIP_FORCE_DEV_KERNARG=$HIP_FORCE_DEV_KERNARG
+# export SINGULARITYENV_TORCH_BLAS_PREFER_HIPBLASLT=$TORCH_BLAS_PREFER_HIPBLASLT
+# export SINGULARITYENV_PYTORCH_TUNABLEOP_ENABLED=$PYTORCH_TUNABLEOP_ENABLED
+
 # --- Ray Data / Generation Specific ENVs for Singularity ---
 export SINGULARITYENV_TEMPERATURE=$TEMPERATURE
 export SINGULARITYENV_TOP_P=$TOP_P
 export SINGULARITYENV_TOP_K=$TOP_K
 export SINGULARITYENV_RAY_DATA_BATCH_SIZE=$RAY_DATA_BATCH_SIZE
-export SINGULARITYENV_RAY_ADDRESS="${RAY_CLIENT_ADDRESS}" # For the client script to connect
 
-# Propagate for Ray workers (NCCL, HSA etc.)
+# Ray configuration
+export SINGULARITYENV_RAY_ADDRESS=$RAY_ADDRESS
+# export SINGULARITYENV_RAY_LOGGING_LEVEL="$RAY_LOGGING_LEVEL"
+# export SINGULARITYENV_RAY_LOG_TO_STDERR="$RAY_LOG_TO_STDERR"
+export SINGULARITYENV_RAY_DISABLE_IMPORT_WARNING=$RAY_DISABLE_IMPORT_WARNING
+export SINGULARITYENV_RAY_DATA_DISABLE_PROGRESS_BARS=$RAY_DATA_DISABLE_PROGRESS_BARS
+export SINGULARITYENV_RAY_DEDUP_LOGS=$RAY_DEDUP_LOGS
+export SINGULARITYENV_RAY_DATA_DISABLE_PROGRESS_BARS=$RAY_DATA_DISABLE_PROGRESS_BARS
+# Hardware configuration
 export SINGULARITYENV_NCCL_SOCKET_IFNAME=$NCCL_SOCKET_IFNAME
 export SINGULARITYENV_NCCL_NET_GDR_LEVEL=$NCCL_NET_GDR_LEVEL
-export SINGULARITYENV_HSA_FORCE_FINE_GRAIN_PCIE=$HSA_FORCE_FINE_GRAIN_PCIE
-export SINGULARITYENV_PYTORCH_HIP_ALLOC_CONF=$PYTORCH_HIP_ALLOC_CONF
+# export SINGULARITYENV_NCCL_DMABUF_ENABLE=$NCCL_DMABUF_ENABLE
+# export SINGULARITYENV_NCCL_MIN_NCHANNELS=$NCCL_MIN_NCHANNELS
+export SINGULARITYENV_NCCL_DEBUG=$NCCL_DEBUG
+# export SINGULARITYENV_HSA_FORCE_FINE_GRAIN_PCIE=$HSA_FORCE_FINE_GRAIN_PCIE
+# export SINGULARITYENV_PYTORCH_HIP_ALLOC_CONF=$PYTORCH_HIP_ALLOC_CONF
 
-# vLLM
-export SINGULARITYENV_VLLM_USE_RAY_SPMD_WORKER=$VLLM_USE_RAY_SPMD_WORKER
-export SINGULARITYENV_VLLM_USE_RAY_COMPILED_DAG=$VLLM_USE_RAY_COMPILED_DAG
-export SINGULARITYENV_VLLM_USE_RAY_COMPILED_DAG_NCCL_CHANNEL=$VLLM_USE_RAY_COMPILED_DAG_NCCL_CHANNEL
-export SINGULARITYENV_VLLM_USE_RAY_COMPILED_DAG_OVERLAP_COMM=$VLLM_USE_RAY_COMPILED_DAG_OVERLAP_COMM
-export SINGULARITYENV_VLLM_USE_RAY_COMPILED_DAG_CHANNEL_TYPE=$VLLM_USE_RAY_COMPILED_DAG_CHANNEL_TYPE
-export SINGULARITYENV_VLLM_USE_TRITON_FLASH_ATTN=$VLLM_USE_TRITON_FLASH_ATTN
-export SINGULARITYENV_VLLM_ROCM_USE_AITER=$VLLM_ROCM_USE_AITER
-export SINGULARITYENV_VLLM_ROCM_USE_AITER_PAGED_ATTN=$VLLM_ROCM_USE_AITER_PAGED_ATTN
-export SINGULARITYENV_VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON=$VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON
-export SINGULARITYENV_VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND
+# vLLM configuration
 export SINGULARITYENV_VLLM_WORKER_MULTIPROC_METHOD=$VLLM_WORKER_MULTIPROC_METHOD
+export SINGULARITYENV_VLLM_LOGGING_LEVEL=$VLLM_LOGGING_LEVEL
+# export SINGULARITYENV_VLLM_USE_RAY_SPMD_WORKER=$VLLM_USE_RAY_SPMD_WORKER
+export SINGULARITYENV_VLLM_DISTRIBUTED_EXECUTOR_BACKEND=$VLLM_DISTRIBUTED_EXECUTOR_BACKEND
+export SINGULARITYENV_VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND
+export SINGULARITYENV_VLLM_CONFIGURE_LOGGING=$VLLM_CONFIGURE_LOGGING
 
 # Start Ray Head
 echo "DEBUG: Starting Ray head node on $head_node_hostname"
 srun --nodes=1 --ntasks=1 -w "$head_node_hostname" --jobid $SLURM_JOBID --cpus-per-task="$RAY_NODE_CPUS" --gpus="$RAY_NODE_GPUS" \
     $SINGULARITY_EXEC_BASE bash -c "${RAY_NODE_SETUP_CMDS} \
-            echo 'Which Ray: '; which ray; \
-            $RAY start --head --port=${RAY_PORT} --num-cpus=${RAY_NODE_CPUS} --num-gpus=${RAY_NODE_GPUS} --block & \
+            $RAY start --head --port=${RAY_PORT} --num-cpus=${RAY_NODE_CPUS} --num-gpus=${RAY_NODE_GPUS} --block --disable-usage-stats  --include-dashboard=False  --verbose & \
             sleep 20;
             echo 'Python client environment:'; \
             env | grep -E 'RAY_|SLURM_|NCCL_|HSA_'; \
@@ -184,9 +221,9 @@ sleep 5
 echo "DEBUG: Starting Ray worker on $worker_node_hostname, connecting to $head_node_hostname:${RAY_PORT}"
 srun --nodes=1 --ntasks=1 --exclude=$head_node_hostname --jobid $SLURM_JOBID --cpus-per-task="$RAY_NODE_CPUS" --gpus="$RAY_NODE_GPUS" \
     $SINGULARITY_EXEC_BASE bash -c "${RAY_NODE_SETUP_CMDS} \
-            $RAY start --block --address=$head_node_hostname:${RAY_PORT}  --num-cpus=${RAY_NODE_CPUS} --num-gpus=${RAY_NODE_GPUS}" &
+            $RAY start --address=$head_node_hostname:${RAY_PORT}  --num-cpus=${RAY_NODE_CPUS} --num-gpus=${RAY_NODE_GPUS}  --block --disable-usage-stats" &
 echo "DEBUG: Ray worker srun command issued. Waiting for it to connect..."
-sleep 1000 # TO-DO: Exit gracefully
+sleep 3000 # TO-DO: Exit gracefully
 
 # --- Cleanup ---
 # Since ray start is now blocking within srun, direct PID waiting might not be applicable
