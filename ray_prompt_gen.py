@@ -37,7 +37,7 @@ TENSOR_PARALLEL_SIZE = int(os.getenv("TENSOR_PARALLEL_SIZE_ENV", "1"))
 PIPELINE_PARALLEL_SIZE = int(os.getenv("PIPELINE_PARALLEL_SIZE_ENV", "1")) # Used for concurrency
 GPU_MEMORY_UTILIZATION = float(os.getenv("GPU_MEMORY_UTILIZATION_ENV", "0.90"))
 MODEL_DTYPE = os.getenv("MODEL_DTYPE_ENV", "bfloat16")
-VLLM_DISTRIBUTED_EXECUTOR_BACKEND = os.getenv("VLLM_DISTRIBUTED_EXECUTOR_BACKEND", "mp")
+VLLM_DISTRIBUTED_EXECUTOR_BACKEND = os.getenv("VLLM_DISTRIBUTED_EXECUTOR_BACKEND", "ray")
 
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5")) # Allow 0.0 for greedy
@@ -114,7 +114,7 @@ def preprocess_prompts(row: Dict[str, Any]) -> Dict[str, Any]:
             top_p=current_top_p,
             top_k=current_top_k,
             detokenize=False, # Recommended by Ray Data example for vLLM
-           # guided_decoding=dict(json=structured_output_schema)
+            guided_decoding=dict(json=structured_output_schema)
         ),
     }
 
@@ -170,10 +170,7 @@ def main():
         "distributed_executor_backend": VLLM_DISTRIBUTED_EXECUTOR_BACKEND,
         "trust_remote_code": True,
         "enforce_eager": True, # Recommended for stability with Ray Data
-        # "use_tqdm_on_load": True
-        # "max-parallel-loading-workers": 2, # unexpected
         # "enable_expert_parallel": True,
-        # "disable_log_stats": False, # conflicting config gets appended from somewhere
     }
     if MAX_MODEL_LEN_PARAM:
         engine_kwargs_config["max_model_len"] = MAX_MODEL_LEN_PARAM
@@ -182,7 +179,6 @@ def main():
         model_source=MODEL_ID_OR_PATH,
         engine_kwargs=engine_kwargs_config,
         #batch_size=RAY_DATA_BATCH_SIZE,
-        #concurrency=PIPELINE_PARALLEL_SIZE 
     )
     logger.info("vLLMEngineProcessorConfig configured.")
 
