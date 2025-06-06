@@ -1,0 +1,414 @@
+RayData_vLLM: --- Starting Ray Data vLLM Structured Inference Script ---
+RayData_vLLM: SLURM_JOB_ID: N/A
+RayData_vLLM: RAY_ADDRESS: Not Set - Ray will attempt to start a new cluster or connect locally
+RayData_vLLM: Initializing Ray...
+RayData_vLLM: Ray initialized successfully.
+RayData_vLLM: Output Directory: ./test_output
+RayData_vLLM: Logging Directory: ./test_logs
+RayData_vLLM: Model ID / Path: hf-internal-testing/tiny-random-GPT2
+RayData_vLLM: Tensor Parallel Size: 1
+RayData_vLLM: Pipeline Parallel Size (Concurrency): 1
+RayData_vLLM: GPU Memory Utilization: 0.9
+RayData_vLLM: Model Data Type: bfloat16
+RayData_vLLM: Max Model Length: Will be inferred by vLLM from model config.
+RayData_vLLM: Prompts File: prompts.json
+RayData_vLLM: Generation Params (used for vLLM SamplingParams) - Max New Tokens: 50, Temp: 0.5, Top P: 1.0, Top K: -1
+RayData_vLLM: Schema for guided decoding: {
+  "$defs": {
+    "ExpertSolutionReply": {
+      "properties": {
+        "acknowledgement": {
+          "title": "Acknowledgement",
+          "type": "string"
+        },
+        "explanation": {
+          "description": "Summary explanation of why the overall solution works and the likely root cause.",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "root_cause_simplified": {
+          "title": "Root Cause Simplified",
+          "type": "string"
+        }
+      },
+      "required": [
+        "acknowledgement",
+        "explanation",
+        "root_cause_simplified"
+      ],
+      "title": "ExpertSolutionReply",
+      "type": "object"
+    },
+    "ProblemMetadata": {
+      "properties": {
+        "category": {
+          "description": "The broad technical area of the problem.",
+          "examples": [
+            "Package Management",
+            "Networking",
+            "Hardware (Drivers/Peripherals)"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "subcategory": {
+          "description": "A more specific description within the category.",
+          "examples": [
+            "Dependency Conflict",
+            "Wi-Fi Connectivity",
+            "USB Device Not Recognized"
+          ],
+          "title": "Subcategory",
+          "type": "string"
+        },
+        "difficulty": {
+          "description": "Estimation of the technical difficulty level.",
+          "enum": [
+            "Beginner",
+            "Intermediate"
+          ],
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "simulated_source": {
+          "description": "The type of platform or source this interaction mimics.",
+          "enum": [
+            "Ask Ubuntu Forum",
+            "Arch Wiki Discussion",
+            "Reddit r/linuxquestions",
+            "Stack Overflow"
+          ],
+          "title": "Simulated Source",
+          "type": "string"
+        },
+        "requires_diagnostic": {
+          "description": "True if this problem commonly requires diagnostic commands.",
+          "title": "Requires Diagnostic",
+          "type": "boolean"
+        },
+        "tested_in_vm_recommended": {
+          "description": "True if the solution carries significant risk and VM testing is advised.",
+          "title": "Tested In Vm Recommended",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "subcategory",
+        "difficulty",
+        "simulated_source",
+        "requires_diagnostic",
+        "tested_in_vm_recommended"
+      ],
+      "title": "ProblemMetadata",
+      "type": "object"
+    },
+    "SystemContext": {
+      "properties": {
+        "distribution": {
+          "examples": [
+            "Ubuntu 22.04 LTS",
+            "Fedora 39",
+            "openSUSE Leap 15.0"
+          ],
+          "title": "Distribution",
+          "type": "string"
+        },
+        "kernel_version": {
+          "description": "Output of uname -r.",
+          "examples": [
+            "5.15.0-86-generic"
+          ],
+          "title": "Kernel Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "distribution",
+        "kernel_version"
+      ],
+      "title": "SystemContext",
+      "type": "object"
+    },
+    "UserProblemPost": {
+      "properties": {
+        "title": {
+          "description": "A concise, attention-grabbing summary of the problem.",
+          "title": "Title",
+          "type": "string"
+        },
+        "persona_description": {
+          "description": "User's background, experience level, and comfort with CLI/GUI.",
+          "examples": [
+            "Intermediate Ubuntu user comfortable with terminal basics but unfamiliar with kernel modules"
+          ],
+          "title": "Persona Description",
+          "type": "string"
+        },
+        "problem_description": {
+          "description": "User's narrative explaining the issue.",
+          "title": "Problem Description",
+          "type": "string"
+        },
+        "system_context": {
+          "$ref": "#/$defs/SystemContext"
+        },
+        "user_goal": {
+          "description": "Clear statement of what the user wants to achieve.",
+          "title": "User Goal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "persona_description",
+        "problem_description",
+        "system_context",
+        "user_goal"
+      ],
+      "title": "UserProblemPost",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "problem_metadata": {
+      "$ref": "#/$defs/ProblemMetadata"
+    },
+    "user_problem_post": {
+      "$ref": "#/$defs/UserProblemPost"
+    },
+    "expert_solution_reply": {
+      "$ref": "#/$defs/ExpertSolutionReply"
+    }
+  },
+  "required": [
+    "problem_metadata",
+    "user_problem_post",
+    "expert_solution_reply"
+  ],
+  "title": "LinuxAdminDataEntry",
+  "type": "object"
+}
+RayData_vLLM: Configuring vLLMEngineProcessorConfig...
+RayData_vLLM: vLLMEngineProcessorConfig configured.
+RayData_vLLM: Building LLM processor...
+RayData_vLLM: Failed to build LLM processor: 'NoneType' object has no attribute 'hub'
+Traceback (most recent call last):
+  File "/app/ray_prompt_gen.py", line 290, in main
+    llm_processor = build_llm_processor(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/data/llm.py", line 313, in build_llm_processor
+    return ProcessorBuilder.build(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/batch/processor/base.py", line 231, in build
+    processor = cls._registry[type_name](config, **kwargs)
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/batch/processor/vllm_engine_proc.py", line 241, in build_vllm_engine_processor
+    model_path = download_model_files(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/common/utils/download_utils.py", line 253, in download_model_files
+    torch_cache_home = torch.hub._get_torch_home()
+AttributeError: 'NoneType' object has no attribute 'hub'
+RayData_vLLM: --- Starting Ray Data vLLM Structured Inference Script ---
+RayData_vLLM: SLURM_JOB_ID: N/A
+RayData_vLLM: RAY_ADDRESS: Not Set - Ray will attempt to start a new cluster or connect locally
+RayData_vLLM: Initializing Ray...
+RayData_vLLM: Ray initialized successfully.
+RayData_vLLM: Output Directory: ./test_output
+RayData_vLLM: Logging Directory: ./test_logs
+RayData_vLLM: Model ID / Path: hf-internal-testing/tiny-random-GPT2
+RayData_vLLM: Tensor Parallel Size: 1
+RayData_vLLM: Pipeline Parallel Size (Concurrency): 1
+RayData_vLLM: GPU Memory Utilization: 0.9
+RayData_vLLM: Model Data Type: bfloat16
+RayData_vLLM: Max Model Length: Will be inferred by vLLM from model config.
+RayData_vLLM: Prompts File: prompts.json
+RayData_vLLM: Generation Params (used for vLLM SamplingParams) - Max New Tokens: 50, Temp: 0.5, Top P: 1.0, Top K: -1
+RayData_vLLM: Schema for guided decoding: {
+  "$defs": {
+    "ExpertSolutionReply": {
+      "properties": {
+        "acknowledgement": {
+          "title": "Acknowledgement",
+          "type": "string"
+        },
+        "explanation": {
+          "description": "Summary explanation of why the overall solution works and the likely root cause.",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "root_cause_simplified": {
+          "title": "Root Cause Simplified",
+          "type": "string"
+        }
+      },
+      "required": [
+        "acknowledgement",
+        "explanation",
+        "root_cause_simplified"
+      ],
+      "title": "ExpertSolutionReply",
+      "type": "object"
+    },
+    "ProblemMetadata": {
+      "properties": {
+        "category": {
+          "description": "The broad technical area of the problem.",
+          "examples": [
+            "Package Management",
+            "Networking",
+            "Hardware (Drivers/Peripherals)"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "subcategory": {
+          "description": "A more specific description within the category.",
+          "examples": [
+            "Dependency Conflict",
+            "Wi-Fi Connectivity",
+            "USB Device Not Recognized"
+          ],
+          "title": "Subcategory",
+          "type": "string"
+        },
+        "difficulty": {
+          "description": "Estimation of the technical difficulty level.",
+          "enum": [
+            "Beginner",
+            "Intermediate"
+          ],
+          "title": "Difficulty",
+          "type": "string"
+        },
+        "simulated_source": {
+          "description": "The type of platform or source this interaction mimics.",
+          "enum": [
+            "Ask Ubuntu Forum",
+            "Arch Wiki Discussion",
+            "Reddit r/linuxquestions",
+            "Stack Overflow"
+          ],
+          "title": "Simulated Source",
+          "type": "string"
+        },
+        "requires_diagnostic": {
+          "description": "True if this problem commonly requires diagnostic commands.",
+          "title": "Requires Diagnostic",
+          "type": "boolean"
+        },
+        "tested_in_vm_recommended": {
+          "description": "True if the solution carries significant risk and VM testing is advised.",
+          "title": "Tested In Vm Recommended",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "subcategory",
+        "difficulty",
+        "simulated_source",
+        "requires_diagnostic",
+        "tested_in_vm_recommended"
+      ],
+      "title": "ProblemMetadata",
+      "type": "object"
+    },
+    "SystemContext": {
+      "properties": {
+        "distribution": {
+          "examples": [
+            "Ubuntu 22.04 LTS",
+            "Fedora 39",
+            "openSUSE Leap 15.0"
+          ],
+          "title": "Distribution",
+          "type": "string"
+        },
+        "kernel_version": {
+          "description": "Output of uname -r.",
+          "examples": [
+            "5.15.0-86-generic"
+          ],
+          "title": "Kernel Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "distribution",
+        "kernel_version"
+      ],
+      "title": "SystemContext",
+      "type": "object"
+    },
+    "UserProblemPost": {
+      "properties": {
+        "title": {
+          "description": "A concise, attention-grabbing summary of the problem.",
+          "title": "Title",
+          "type": "string"
+        },
+        "persona_description": {
+          "description": "User's background, experience level, and comfort with CLI/GUI.",
+          "examples": [
+            "Intermediate Ubuntu user comfortable with terminal basics but unfamiliar with kernel modules"
+          ],
+          "title": "Persona Description",
+          "type": "string"
+        },
+        "problem_description": {
+          "description": "User's narrative explaining the issue.",
+          "title": "Problem Description",
+          "type": "string"
+        },
+        "system_context": {
+          "$ref": "#/$defs/SystemContext"
+        },
+        "user_goal": {
+          "description": "Clear statement of what the user wants to achieve.",
+          "title": "User Goal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "persona_description",
+        "problem_description",
+        "system_context",
+        "user_goal"
+      ],
+      "title": "UserProblemPost",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "problem_metadata": {
+      "$ref": "#/$defs/ProblemMetadata"
+    },
+    "user_problem_post": {
+      "$ref": "#/$defs/UserProblemPost"
+    },
+    "expert_solution_reply": {
+      "$ref": "#/$defs/ExpertSolutionReply"
+    }
+  },
+  "required": [
+    "problem_metadata",
+    "user_problem_post",
+    "expert_solution_reply"
+  ],
+  "title": "LinuxAdminDataEntry",
+  "type": "object"
+}
+RayData_vLLM: Configuring vLLMEngineProcessorConfig...
+RayData_vLLM: vLLMEngineProcessorConfig configured.
+RayData_vLLM: Building LLM processor...
+RayData_vLLM: Failed to build LLM processor: 'NoneType' object has no attribute 'hub'
+Traceback (most recent call last):
+  File "/app/ray_prompt_gen.py", line 290, in main
+    llm_processor = build_llm_processor(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/data/llm.py", line 313, in build_llm_processor
+    return ProcessorBuilder.build(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/batch/processor/base.py", line 231, in build
+    processor = cls._registry[type_name](config, **kwargs)
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/batch/processor/vllm_engine_proc.py", line 241, in build_vllm_engine_processor
+    model_path = download_model_files(
+  File "/home/swebot/.local/lib/python3.10/site-packages/ray/llm/_internal/common/utils/download_utils.py", line 253, in download_model_files
+    torch_cache_home = torch.hub._get_torch_home()
+AttributeError: 'NoneType' object has no attribute 'hub'

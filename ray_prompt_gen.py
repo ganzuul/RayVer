@@ -263,7 +263,7 @@ def main():
     # vllm/vllm/engine/arg_utils.py
     logger.info("Configuring vLLMEngineProcessorConfig...")
     engine_kwargs_config = {
-        #"guided_decoding_backend": "xgrammar",
+        "guided_decoding_backend": "xgrammar",
         "dtype": MODEL_DTYPE,
         #"download_dir": SHARED_MODEL_CACHE,
         "tensor_parallel_size": TENSOR_PARALLEL_SIZE,
