@@ -3,14 +3,38 @@ import json
 from datetime import datetime
 import logging
 import sys
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Literal, Union, Dict, Any
 from pydantic import BaseModel, Field
+import numpy as np  # For array handling
 
 from rich.logging import RichHandler
 from rich.console import Console
 
 import ray
 from ray.data.llm import vLLMEngineProcessorConfig, build_llm_processor
+
+def convert_to_serializable(obj):
+    """
+    Recursively convert numpy arrays and other non-serializable types
+    to JSON-serializable types in nested structures.
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, list):
+        return [convert_to_serializable(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif hasattr(obj, 'model_dump'):
+        # Handle Pydantic models
+        return convert_to_serializable(obj.model_dump())
+    else:
+        try:
+            json.dumps(obj)
+            return obj
+        except TypeError:
+            return str(obj)
 
 # --- Pydantic Model Definitions (as provided previously) ---
 # Best practice: Move these to a separate models.py file and import them
@@ -25,24 +49,24 @@ class ProblemMetadata(BaseModel):
     subcategory: str = Field(..., description="A more specific description within the category.", examples=["Dependency Conflict", "Wi-Fi Connectivity", "USB Device Not Recognized"])
     difficulty: DifficultyLevel = Field(..., description="Estimation of the technical difficulty level.")
     simulated_source: SimulatedSource = Field(..., description="The type of platform or source this interaction mimics.")
-    tags: List[str] = Field(..., description="Relevant keywords or technical terms.", examples=[["#apt", "#usb", "#dmesg"]])
+    #tags: List[str] = Field(..., description="Relevant keywords or technical terms.", examples=[["#apt", "#usb", "#dmesg"]])
     requires_diagnostic: bool = Field(..., description="True if this problem commonly requires diagnostic commands.")
     tested_in_vm_recommended: bool = Field(..., description="True if the solution carries significant risk and VM testing is advised.")
 
 class SystemContext(BaseModel):
     distribution: str = Field(..., examples=["Ubuntu 22.04 LTS", "Fedora 39","openSUSE Leap 15.0"])
-    desktop_environment: Optional[str] = Field(None, examples=["GNOME 42", "KDE Plasma 5.27"])
+    #desktop_environment: Optional[str] = Field(None, examples=["GNOME 42", "KDE Plasma 5.27"])
     kernel_version: str = Field(..., description="Output of uname -r.", examples=["5.15.0-86-generic"])
-    hardware_summary: Optional[str] = Field(None, description="Relevant hardware, especially for hardware-related issues.", examples=["XP-Pen Deco 01 V2 tablet, AMD Ryzen 7 5700U"])
-    other_relevant_info: Optional[str] = Field(None, description="Any other specific context like dual-boot setup, recent changes.")
+    #hardware_summary: Optional[str] = Field(None, description="Relevant hardware, especially for hardware-related issues.", examples=["XP-Pen Deco 01 V2 tablet, AMD Ryzen 7 5700U"])
+    #other_relevant_info: Optional[str] = Field(None, description="Any other specific context like dual-boot setup, recent changes, os-release.")
 
 class UserProblemPost(BaseModel):
     title: str = Field(..., description="A concise, attention-grabbing summary of the problem.")
     persona_description: str = Field(..., description="User's background, experience level, and comfort with CLI/GUI.", examples=["Intermediate Ubuntu user comfortable with terminal basics but unfamiliar with kernel modules"])
     problem_description: str = Field(..., description="User's narrative explaining the issue.")
-    error_messages: Optional[List[str]] = Field(default_factory=list, description="Exact text of any errors or relevant log snippets.", examples=[["dmesg output shows: [ 1234.567890] usb 3-2: device descriptor read/64, error -71"]])
+    #error_messages: Optional[List[str]] = Field(default_factory=list, description="Exact text of any errors or relevant log snippets.", examples=[["dmesg output shows: [ 1234.567890] usb 3-2: device descriptor read/64, error -71"]])
     system_context: SystemContext
-    steps_already_tried: Optional[List[str]] = Field(default_factory=list, description="Actions the user has already attempted.", examples=[["Tried different USB ports and cables", "Rebooted multiple times"]])
+    #steps_already_tried: Optional[List[str]] = Field(default_factory=list, description="Actions the user has already attempted.", examples=[["Tried different USB ports and cables", "Rebooted multiple times"]])
     user_goal: str = Field(..., description="Clear statement of what the user wants to achieve.")
 
 class DiagnosticStep(BaseModel):
@@ -54,7 +78,7 @@ class DiagnosticStep(BaseModel):
 
 class RelevantExpertContext(BaseModel):
     experience_snippet: str = Field(..., examples=["Having resolved numerous USB device conflicts on Ubuntu systems..."])
-    common_pitfalls: List[str] = Field(..., description="Common mistakes or dangerous alternatives to avoid.", examples=[["Blacklisting essential USB drivers without understanding dependencies"]])
+    #common_pitfalls: List[str] = Field(..., description="Common mistakes or dangerous alternatives to avoid.", examples=[["Blacklisting essential USB drivers without understanding dependencies"]])
     effective_strategy_overview: str = Field(..., description="General approach or reasoning behind the solution.")
 
 class StepByStepFixItem(BaseModel):
@@ -67,7 +91,7 @@ class StepByStepFixItem(BaseModel):
 
 class VerificationStep(BaseModel):
     instruction: str
-    commands: Optional[List[str]] = Field(default_factory=list)
+    #commands: Optional[List[str]] = Field(default_factory=list)
     expected_output: Optional[str] = Field(None, description="What output should look like if successful.")
 
 class AlternativeSolution(BaseModel):
@@ -77,18 +101,18 @@ class AlternativeSolution(BaseModel):
 
 class ExpertSolutionReply(BaseModel):
     acknowledgement: str
-    relevant_expert_context: RelevantExpertContext
-    step_by_step_fix: List[StepByStepFixItem]
+    #relevant_expert_context: RelevantExpertContext
+    #step_by_step_fix: List[StepByStepFixItem]
     explanation: str = Field(..., description="Summary explanation of why the overall solution works and the likely root cause.")
-    warnings: List[str] = Field(..., description="Prominent general warnings about the solution or problem type.")
-    verification_steps: List[VerificationStep]
-    alternative_solutions: Optional[List[AlternativeSolution]] = Field(default_factory=list)
+    #warnings: List[str] = Field(..., description="Prominent general warnings about the solution or problem type.")
+    #verification_steps: List[VerificationStep]
+    # alternative_solutions: Optional[List[AlternativeSolution]] = Field(default_factory=list)
     root_cause_simplified: str
 
 class LinuxAdminDataEntry(BaseModel):
     problem_metadata: ProblemMetadata
     user_problem_post: UserProblemPost
-    diagnostic_reasoning_process: List[DiagnosticStep]
+    #diagnostic_reasoning_process: List[DiagnosticStep]
     expert_solution_reply: ExpertSolutionReply
 
 # --- End of Pydantic Model Definitions ---
@@ -126,7 +150,6 @@ if MAX_MODEL_LEN_ENV:
 
 RAY_DATA_BATCH_SIZE = int(os.getenv("RAY_DATA_BATCH_SIZE", "16"))
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(LOGGING_DIR, exist_ok=True)
 
 # --- Logger Setup ---
@@ -169,6 +192,12 @@ def preprocess_prompts(row: Dict[str, Any]) -> Dict[str, Any]:
         current_top_p = 1.0 # vLLM default for greedy
         current_top_k = -1  # vLLM default for greedy
 
+    # Convert schema to JSON string and back to ensure all numpy types are converted
+    schema_json = json.dumps(structured_output_schema, default=convert_to_serializable)
+    serialized_schema = json.loads(schema_json)
+    
+    #serialized_schema = structured_output_schema
+
     return {
         "messages": [
             {
@@ -186,7 +215,7 @@ def preprocess_prompts(row: Dict[str, Any]) -> Dict[str, Any]:
             top_p=current_top_p,
             top_k=current_top_k,
             detokenize=False, # Recommended by Ray Data example for vLLM
-            guided_decoding=dict(json=structured_output_schema)
+            guided_decoding=dict(json=serialized_schema)
         ),
     }
 
@@ -250,7 +279,8 @@ def main():
     processor_config = vLLMEngineProcessorConfig(
         model_source=MODEL_ID_OR_PATH,
         engine_kwargs=engine_kwargs_config,
-        #batch_size=RAY_DATA_BATCH_SIZE,
+        batch_size=RAY_DATA_BATCH_SIZE,
+        concurrency=PIPELINE_PARALLEL_SIZE,
     )
     logger.info("vLLMEngineProcessorConfig configured.")
 
@@ -298,7 +328,7 @@ def main():
         return
 
     # Convert to Ray Dataset
-    input_dataset = ray.data.from_items([{"prompt": p} for p in prompts_to_process_list])
+    input_dataset = ray.data.from_items([{"prompt": p} for p in prompts_to_process_list], parallelism=PIPELINE_PARALLEL_SIZE)
     logger.info(f"Created Ray Dataset with {input_dataset.count()} items.")
 
     # --- Apply Processor and Materialize ---
@@ -315,6 +345,7 @@ def main():
         sys.exit(1)
         
     # --- Save Outputs ---
+    os.makedirs(OUTPUT_DIR, exist_ok=True) # Moved here for testing.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     job_id = os.getenv("SLURM_JOB_ID", "localrun")
     output_file_name = f"output_ray_data_vllm_structured_{job_id}_{timestamp}.jsonl"
@@ -332,7 +363,7 @@ def main():
                 # includes the original prompt and the parsed generated_data.
                 
                 output_entry = {
-                    "input_prompt": item.get("original_prompt"),
+                    #"input_prompt": item.get("original_prompt"),
                     # The "generated_json_string" IS the JSON string for StructuredOutput's generated_data part,
                     # assuming the system prompt + schema guided it correctly.
                     # To fit the StructuredOutput model, we'd parse generated_json_string
